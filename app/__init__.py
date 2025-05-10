@@ -1,0 +1,3 @@
+"""
+Video compression service package
+""" 
