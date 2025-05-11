@@ -14,14 +14,31 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Video Compression Service")
 
-# Add CORS middleware
+# Add CORS middleware with more specific settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://daftaros.com"],  # Allows requests from your Next.js application
+    allow_origins=[
+        "http://localhost:3000",
+        "https://daftaros.com",
+        "https://www.daftaros.com",
+        # Add your production domain here
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+    max_age=3600,
 )
+
+# Add security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 @app.get("/", response_class=HTMLResponse)
 async def get_upload_form():
