@@ -40,19 +40,38 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
 
+# Supported video formats
+SUPPORTED_FORMATS = {
+    'video/mp4': '.mp4',
+    'video/quicktime': '.mov',
+    'video/x-msvideo': '.avi',
+    'video/x-matroska': '.mkv',
+    'video/webm': '.webm',
+    'video/3gpp': '.3gp',
+    'video/x-ms-wmv': '.wmv',
+    'video/x-flv': '.flv',
+    'video/mpeg': '.mpeg',
+    'video/x-m4v': '.m4v'
+}
+
 @app.get("/", response_class=HTMLResponse)
 async def get_upload_form():
-    return """
+    # Create the accept attribute string from supported formats
+    accept_formats = ",".join(SUPPORTED_FORMATS.keys())
+    
+    return f"""
     <html>
         <head>
             <title>Video Compression Service</title>
         </head>
         <body>
-            <h1>Upload MP4 Video for Compression</h1>
+            <h1>Upload Video for Compression</h1>
             <form action="/compress-mp4" method="post" enctype="multipart/form-data">
                 <p>
-                    <label for="video">Select MP4 file:</label><br>
-                    <input type="file" id="video" name="video" accept="video/mp4" required>
+                    <label for="video">Select video file:</label><br>
+                    <input type="file" id="video" name="video" accept="{accept_formats}" required>
+                    <br>
+                    <small>Supported formats: {', '.join(ext for ext in SUPPORTED_FORMATS.values())}</small>
                 </p>
                 <p>
                     <label for="target_size_mb">Target size (MB):</label><br>
@@ -67,6 +86,7 @@ async def get_upload_form():
         </body>
     </html>
     """
+
 @app.post("/compress-mp4")
 async def compress_video_endpoint(
     video: UploadFile = File(...),
@@ -74,8 +94,12 @@ async def compress_video_endpoint(
     maintain_aspect_ratio: bool = Form(True)
 ):
     try:
-        if not video.filename.lower().endswith('.mp4'):
-            raise HTTPException(status_code=400, detail="Only MP4 files are supported")
+        # Check if the file type is supported
+        if video.content_type not in SUPPORTED_FORMATS:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file type. Supported formats are: {', '.join(ext for ext in SUPPORTED_FORMATS.values())}"
+            )
         
         logger.info(f"Processing video: {video.filename}")
         logger.info(f"Target size: {target_size_mb}MB, Maintain aspect ratio: {maintain_aspect_ratio}")
@@ -115,9 +139,9 @@ async def compress_video_endpoint(
             # Return the compressed file as binary response
             return Response(
                 content=compressed_content,
-                media_type="video/mp4",
+                media_type="video/mp4",  # Always return as MP4
                 headers={
-                    "Content-Disposition": f'attachment; filename="compressed_{video.filename}"'
+                    "Content-Disposition": f'attachment; filename="compressed_{os.path.splitext(video.filename)[0]}.mp4"'
                 }
             )
         

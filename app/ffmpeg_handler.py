@@ -6,6 +6,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def get_video_info(input_path: str) -> dict:
+    """Get video information using ffprobe"""
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name,width,height,r_frame_rate",
+        "-show_entries", "format=duration,bit_rate",
+        "-of", "json",
+        input_path
+    ]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFprobe error: {e.stderr}")
+        raise RuntimeError(f"Failed to get video information: {e.stderr}")
+
 def get_video_duration(input_path: str) -> float:
     """Get video duration in seconds using ffprobe"""
     cmd = [
@@ -56,6 +80,10 @@ async def compress_video(
     maintain_aspect_ratio: bool
 ) -> str:
     """Compress video to target size using FFmpeg"""
+    # Get video information
+    video_info = get_video_info(input_path)
+    logger.info(f"Video information: {video_info}")
+    
     # Calculate target bitrate
     duration = get_video_duration(input_path)
     target_size_bits = target_size_mb * 8 * 1024 * 1024
@@ -64,12 +92,16 @@ async def compress_video(
     job_id = str(Path(input_path).parent.name)
     output_path = get_video_output_path(input_path, job_id)
     
-    # Build FFmpeg command
+    # Build FFmpeg command with improved codec selection
     base_cmd = [
         "ffmpeg",
         "-i", input_path,
-        "-c:v", "libx264",
+        "-c:v", "libx264",  # Use H.264 codec
+        "-preset", "medium",  # Balance between speed and quality
+        "-crf", "23",  # Constant Rate Factor for quality
         "-b:v", f"{target_bitrate}",
+        "-maxrate", f"{target_bitrate * 1.5}",  # Maximum bitrate
+        "-bufsize", f"{target_bitrate * 2}",  # Buffer size
         "-pass", "1",
         "-f", "mp4"
     ]
@@ -86,15 +118,21 @@ async def compress_video(
         logger.error(f"First pass encoding failed: {e.stderr}")
         raise RuntimeError(f"First pass encoding failed: {e.stderr}")
     
-    # Second pass
+    # Second pass with improved audio handling
     second_pass = [
         "ffmpeg",
         "-i", input_path,
         "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "23",
         "-b:v", f"{target_bitrate}",
+        "-maxrate", f"{target_bitrate * 1.5}",
+        "-bufsize", f"{target_bitrate * 2}",
         "-pass", "2",
-        "-c:a", "aac",
-        "-b:a", "128k"
+        "-c:a", "aac",  # Use AAC for audio
+        "-b:a", "128k",  # Audio bitrate
+        "-ar", "44100",  # Audio sample rate
+        "-ac", "2"  # Stereo audio
     ]
     
     if maintain_aspect_ratio:
